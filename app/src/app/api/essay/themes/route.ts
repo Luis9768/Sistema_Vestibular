@@ -57,8 +57,22 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const { axis } = await req.json().catch(() => ({}));
+    const AXES = [
+      "Indústria 4.0, automação e futuro do trabalho",
+      "Saúde mental e trabalho",
+      "Desinformação e inteligência artificial",
+      "Inclusão de pessoas com deficiência e mulheres na indústria",
+      "Educação profissional e juventude",
+      "Segurança do trabalho e ergonomia",
+      "Economia circular, resíduos e energia limpa",
+      "Privacidade de dados e cidadania digital",
+      "Envelhecimento da população e requalificação profissional",
+      "Soberania tecnológica e inovação nacional",
+    ];
+    const chosenAxis = axis || AXES[Math.floor(Math.random() * AXES.length)];
+    const seed = Math.floor(Math.random() * 100000);
 
-    const prompt = `Gere uma proposta de redação inédita de vestibular técnico / Faculdade SENAI voltada ao eixo: ${axis || "Indústria 4.0, Tecnologia e Sustentabilidade"}.
+    const prompt = `Gere uma proposta de redação inédita (semente ${seed}) de vestibular técnico / Faculdade SENAI sobre o eixo: ${chosenAxis}. Evite temas já muito repetidos; traga um recorte específico, com dado ou fato plausível nos textos motivadores.
 Retorne ESTRITAMENTE em formato JSON sem markdown adicional:
 {
   "id": "tema-ia-novo",
@@ -76,6 +90,7 @@ Retorne ESTRITAMENTE em formato JSON sem markdown adicional:
       const responseText = await callGemini(prompt);
       const cleaned = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
       const generated = JSON.parse(cleaned);
+      generated.id = `tema-ia-${seed}`;
       return NextResponse.json({ theme: generated });
     } catch {
       // Fallback dinâmico caso API esteja indisponível

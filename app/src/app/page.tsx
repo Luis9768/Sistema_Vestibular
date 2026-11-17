@@ -76,7 +76,7 @@ export default function Home() {
       const res = await fetch("/api/essay/themes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ axis: "Indústria 4.0, Automação e Sustentabilidade" }),
+        body: JSON.stringify({}),
       });
       const data = await res.json();
       if (data.theme) {
@@ -151,18 +151,36 @@ export default function Home() {
     }
   };
 
-  const handleGenerateQuestionsAI = async () => {
+  const [tips, setTips] = useState<any>(null);
+  const [isLoadingTips, setIsLoadingTips] = useState(false);
+
+  const handleGenerateQuestionsAI = async (categoryOverride?: string) => {
+    const cat = typeof categoryOverride === "string" ? categoryOverride : simuladoCategory;
     setIsLoadingQuestions(true);
     setSelectedAnswers({});
     setIsSubmitted(false);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+
     try {
+      const studied = cat !== "variado";
+      const subject =
+        cat === "crase" || cat === "conectivos"
+          ? "portugues"
+          : cat === "misto" || cat === "variado"
+          ? "misto"
+          : "matematica";
+
       const res = await fetch("/api/questions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
-          topic: simuladoCategory === "misto" ? "regra de três, porcentagem e crase" : simuladoCategory,
-          subject: simuladoCategory.includes("crase") || simuladoCategory.includes("conectivos") ? "portugues" : "matematica",
-          count: 5,
+          mode: studied ? "estudado" : "variado",
+          topic: studied ? (cat === "misto" ? "regra de três, porcentagem, geometria, crase e conectivos" : cat) : "",
+          subject,
+          count: 6,
         }),
       });
       const data = await res.json();
@@ -170,17 +188,29 @@ export default function Home() {
         setQuestions(data.questions);
       }
     } catch {
+      // mantém as questões atuais se a IA falhar ou demorar demais
     } finally {
+      clearTimeout(timer);
       setIsLoadingQuestions(false);
     }
   };
 
-  const handleSubmitSimulado = () => {
+  const handleSubmitSimulado = async () => {
     setIsSubmitted(true);
     let correct = 0;
+    const wrong: { category: string; question: string; chosen: string; correct: string }[] = [];
+
     questions.forEach((q) => {
-      if (selectedAnswers[q.id] === q.correctIndex) {
+      const chosen = selectedAnswers[q.id];
+      if (chosen === q.correctIndex) {
         correct++;
+      } else {
+        wrong.push({
+          category: q.category,
+          question: q.question,
+          chosen: chosen !== undefined ? q.options[chosen] : "(em branco)",
+          correct: q.options[q.correctIndex],
+        });
       }
     });
 
@@ -190,6 +220,25 @@ export default function Home() {
       questionsCorrect: stats.questionsCorrect + correct,
     };
     saveStats(newStats);
+
+    setIsLoadingTips(true);
+    setTips(null);
+    try {
+      const res = await fetch("/api/tips", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          wrong,
+          correctCount: correct,
+          total: questions.length,
+          essayScore: stats.lastEssayScore,
+        }),
+      });
+      setTips(await res.json());
+    } catch {
+    } finally {
+      setIsLoadingTips(false);
+    }
   };
 
   // --- ESQUELETO TRAINER STATE ---
@@ -587,6 +636,29 @@ export default function Home() {
                   </div>
                 )}
 
+                {gradingResult.improvementTips && gradingResult.improvementTips.length > 0 && (
+                  <div className="space-y-2.5">
+                    <h4 className="text-xs font-mono uppercase tracking-wider text-zinc-400">
+                      Como subir sua nota no próximo texto:
+                    </h4>
+                    <div className="space-y-2">
+                      {gradingResult.improvementTips.map((t: any, i: number) => (
+                        <div
+                          key={i}
+                          className="p-3 rounded-lg bg-zinc-950 border border-zinc-800/80 text-xs flex items-start gap-2.5"
+                        >
+                          <Lightbulb className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                          <div className="text-zinc-300">
+                            <span className="font-mono text-zinc-400">{t.competency}</span>
+                            <span className="mx-1.5 text-zinc-600">•</span>
+                            {t.tip}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Polished Rewrite */}
                 {gradingResult.polishedRewrite && (
                   <div className="space-y-2">
@@ -610,7 +682,7 @@ export default function Home() {
               <div>
                 <h1 className="text-xl font-medium tracking-tight text-zinc-100">Simulador de Questões com IA</h1>
                 <p className="text-xs text-zinc-400 mt-0.5">
-                  Treino dinâmico focado em regra de três, porcentagem, geometria e pegadinhas.
+                  Treino dinâmico: use "Variado" para tópicos novos além do que estudamos.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -618,11 +690,17 @@ export default function Home() {
                   value={simuladoCategory}
                   onChange={(e) => {
                     setSimuladoCategory(e.target.value);
-                    fetchQuestions(e.target.value);
+                    setTips(null);
+                    if (e.target.value === "variado") {
+                      handleGenerateQuestionsAI(e.target.value);
+                    } else {
+                      fetchQuestions(e.target.value);
+                    }
                   }}
                   className="bg-zinc-900 border border-zinc-800 text-zinc-200 text-xs rounded-lg px-2.5 py-1.5 outline-none"
                 >
-                  <option value="misto">Simulado Misto (Português + Matemática)</option>
+                  <option value="variado">Variado com IA (tópicos novos)</option>
+                  <option value="misto">Revisão: Misto do que estudamos</option>
                   <option value="regra de três">Regra de Três (Direta e Inversa)</option>
                   <option value="porcentagem">Porcentagem e Valor Final</option>
                   <option value="geometria">Geometria Plana (m² e Cerca)</option>
@@ -631,7 +709,10 @@ export default function Home() {
                 </select>
 
                 <button
-                  onClick={handleGenerateQuestionsAI}
+                  onClick={() => {
+                    setTips(null);
+                    handleGenerateQuestionsAI();
+                  }}
                   disabled={isLoadingQuestions}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-xs font-medium text-zinc-200 transition-colors disabled:opacity-50"
                 >
@@ -641,8 +722,15 @@ export default function Home() {
               </div>
             </div>
 
+            {isLoadingQuestions && (
+              <div className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/50 text-xs text-zinc-300 flex items-center gap-2.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                Gerando questões inéditas com IA. Costuma levar de 3 a 10 segundos.
+              </div>
+            )}
+
             {/* Questions List */}
-            <div className="space-y-6">
+            <div className={`space-y-6 transition-opacity ${isLoadingQuestions ? "opacity-40" : ""}`}>
               {questions.map((q, idx) => {
                 const userSelected = selectedAnswers[q.id];
                 const isAnswered = userSelected !== undefined;
@@ -749,9 +837,8 @@ export default function Home() {
                 {isSubmitted ? (
                   <button
                     onClick={() => {
-                      setSelectedAnswers({});
-                      setIsSubmitted(false);
-                      fetchQuestions(simuladoCategory);
+                      setTips(null);
+                      handleGenerateQuestionsAI();
                     }}
                     className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-100 transition-colors"
                   >
@@ -770,6 +857,37 @@ export default function Home() {
                 )}
               </div>
             </div>
+
+            {(isLoadingTips || tips) && (
+              <div className="p-5 rounded-xl border border-zinc-800 bg-zinc-900/40 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Lightbulb className="w-4 h-4 text-amber-400" />
+                  <h3 className="text-sm font-medium text-zinc-100">Como melhorar (dicas da IA)</h3>
+                </div>
+                {isLoadingTips && <p className="text-xs text-zinc-400">Analisando seus erros...</p>}
+                {tips && (
+                  <div className="space-y-3">
+                    {tips.resumo && <p className="text-xs text-zinc-300">{tips.resumo}</p>}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                      {(tips.dicas || []).map((d: any, i: number) => (
+                        <div key={i} className="p-3 rounded-lg bg-zinc-950 border border-zinc-800/80 text-xs space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-zinc-100">{d.titulo}</span>
+                            {d.tempo && <span className="font-mono text-[10px] text-zinc-400">{d.tempo}</span>}
+                          </div>
+                          <p className="text-zinc-300 leading-relaxed">{d.acao}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {tips.proximoTreino && (
+                      <p className="text-xs text-emerald-400">
+                        <strong>Próximo treino:</strong> {tips.proximoTreino}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

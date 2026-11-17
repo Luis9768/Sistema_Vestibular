@@ -53,11 +53,14 @@ Retorne ESTRITAMENTE em formato JSON sem markdown ou texto extra:
   "vocabSuggestions": [
     { "original": "problema", "replacement": "entrave / impasse", "context": "Substitua no 2º parágrafo" }
   ],
+  "improvementTips": [
+    { "competency": "C1", "tip": "Dica prática e específica para subir esta competência no próximo texto" }
+  ],
   "polishedRewrite": "Versão completa reescrita do texto do aluno em norma culta mantendo todas as ideias dele."
 }`;
 
     try {
-      const responseText = await callGemini(prompt);
+      const responseText = await callGemini(prompt, { thinking: "low" });
       const cleaned = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
       const parsed = JSON.parse(cleaned);
       return NextResponse.json(parsed);
